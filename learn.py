@@ -45,7 +45,7 @@ def train(observation1,observation2,env, agent, log_dir, imitate=False):
             action = np.clip(action, -env.action_space.high, env.action_space.high)
             s_next, r, done, info_next = env.step(action)
             observation2.store(s_next,info_next)
-            agent.remember(observation1.sta, observation1.info, action, observation2.sat, r, done, observation2.info)
+            agent.remember(observation1.sta, observation1.info, action, observation2.sta, r, done, observation2.info)
 
             observation1.store(s_next,info_next)
 

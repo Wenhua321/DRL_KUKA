@@ -220,7 +220,7 @@ class Actor(nn.Module):
 
         # 4*128*128->16*122*122
         self.fc1 = nn.Sequential(
-            nn.Linear((32 + 8)*5, 256),
+            nn.Linear(200, 256),
             nn.ReLU(),
             nn.Linear(256, 256),
             nn.ReLU(),
@@ -231,17 +231,18 @@ class Actor(nn.Module):
 
 
     def forward(self, x, robot_state):
-        output = torch.tensor(40 * 5, torch.float, x.device())
+        batch_size=x.shape[0]
+        output = np_to_tensor( np.zeros([batch_size,40*5], dtype=np.float32),self.device)
         for i in range(5):
             if self.mode == 'rgbd':
-                x2 = self.conv(x[i] / 255)  # 122*122*8
+                x2 = self.conv(x[:,i] / 255)  # 122*122*8
             elif self.mode == 'de':
-                l1 = self.conv(x[i,:, :3] / 255)
-                l2 = self.conv(x[i,:, 3:] / 255)
+                l1 = self.conv(x[:,i,:3] / 255)
+                l2 = self.conv(x[:,i, 3:] / 255)
                 x2 = torch.cat((l1, l2), dim=1)
             x3 = SpacialSoftmaxExpectation(self.width - 6, self.device)(x2)
             # concatenate with robot state:
-            output[i * 40:(i + 1) * 128] = torch.cat((x3, robot_state[i]), dim=1)
+            output[:,i*40:(i+1)*40]=torch.cat((x3, robot_state[:,i]), dim=1)
         action = self.fc1(output)  # 32 + 8
         return action
 
@@ -491,8 +492,8 @@ class HLAgent:
             self.epsilon = max(self.epsilon - self.delta, 0)
             action_b_t = np_to_tensor(action_b, self.device).unsqueeze(dim=0)
             with torch.no_grad():
-                q_b = self.critic(info[4], action_b_t)
-                q = self.critic(info[4], action)
+                q_b = self.critic(info[:,4], action_b_t)
+                q = self.critic(info[:,4], action)
             if q_b.item() > q.item() and self.mixed_q:
                 return action_b, False
             else:
