@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from kuka import KukaCamGymEnv, KukaCamGymEnv2, KukaCamGymEnv3
-from agent import HLAgent ,SAC_Agent
+from agent import HLAgent
 import csv
 import argparse
 
@@ -85,11 +85,9 @@ def train(env, agent, log_dir, imitate=False):
                 with open(log_file, "a+", newline='') as csvfile:
                     writer = csv.writer(csvfile)
                     writer.writerow(new_line)
-                with open(log_dir + '/critic1.pt', 'wb') as fc:
-                    torch.save(agent.critic1, fc)
-                with open(log_dir + '/critic2.pt', 'wb') as fb:
-                 
-                    torch.save(agent.critic2, fb)
+                with open(log_dir + '/critic.pt', 'wb') as fc:
+                    torch.save(agent.critic, fc)
+
                 with open(log_dir + '/actor.pt', 'wb') as fa:
                     torch.save(agent.actor, fa)
                 break
@@ -104,7 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--log', type=int, default=1)
     parser.add_argument('-i', '--use_image', action='store_true')
     parser.add_argument('-a', '--imitate', action='store_true')
-    parser.add_argument('-t', '--task', type=int, default=1)
+    parser.add_argument('-t', '--task', type=int, default=3)
     parser.add_argument('-q', '--mixed_q', action='store_true')
     parser.add_argument('-b', '--baseline_boot', action='store_true')
     parser.add_argument('-c', '--behavior_clone', action='store_true')
@@ -122,10 +120,18 @@ if __name__ == '__main__':
     agent = HLAgent(mode=args.mode, width=args.width, device=args.gpu, use_fast=not args.use_image, task=args.task,
                     mixed_q=args.mixed_q, baseline_boot=args.baseline_boot,
                     behavior_clone=args.behavior_clone, imitate=args.imitate)
-                    '''
-    agent = SAC_Agent(mode=args.mode, width=args.width, device=args.gpu, use_fast=False, task=args.task,
+    
+                  '''
+
+    agent = HLAgent(mode=args.mode, width=args.width, device=args.gpu, use_fast=False, task=args.task,
                     mixed_q=args.mixed_q, baseline_boot=args.baseline_boot,
                     behavior_clone=args.behavior_clone, imitate=args.imitate)
-
     train(env, agent, log_dir=log_dir, imitate=args.imitate)
+    '''
+    agent = HLAgent(mode='de', width=128, device=0, use_fast=False, task=3,
+                    mixed_q=True, baseline_boot=True,
+                    behavior_clone=True, imitate=False)
+
+    train(env, agent, log_dir=log_dir, imitate=False)
+    '''
     env.close()

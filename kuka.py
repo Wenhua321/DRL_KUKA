@@ -4,7 +4,7 @@ from gym.utils import seeding
 import pybullet as p
 import numpy as np
 import time
-from data_util import pc_normalize
+
 
 
 def Point(x=0., y=0., z=0.):
@@ -326,85 +326,12 @@ class KukaCamGymEnv(gym.Env):
                 self._observation[4] = rgb2[:, :, 1]
                 self._observation[5] = rgb2[:, :, 2]
 
-
-            elif self._mode =='pc':
-                
-                observation = np.zeros((self._height, self._width, 6), dtype=np.float32)
-                viewMat2 = p.computeViewMatrixFromYawPitchRoll(camEyePos, distance, 0, pitch, roll, upAxisIndex)
-
-                img_arr2 = p.getCameraImage(self._width,
-                                            self._height,
-                                            viewMat2,
-                                            projMatrix)
-                rgb2 = img_arr2[2]
-                observation2 = np.zeros((self._height, self._width, 6), dtype=np.float32)
-                viewMat2 = np.array(viewMat2).reshape(4, 4).T
-
-                px = np.tile(np.arange(self._width, dtype=np.float32)[None, :], (self._height, 1))
-                py = np.tile(np.arange(self._height, dtype=np.float32)[:, None], (1, self._width))
-                viewMat = np.array(viewMat).reshape(4, 4).T
-
-                projMatrix = np.array(projMatrix).reshape(4, 4).T
-                T = np.linalg.inv(viewMat)
-                u = (px / (self._width - 1) - 0.5) * 2
-                v = (-py / (self._height - 1) + 0.5) * 2
-                depth_buffer = img_arr[3].reshape(self._height, self._width)
-
-                d = 2 * depth_buffer - 1
-                z1 = -projMatrix[2][3] / (projMatrix[2][2] + d)
-                x1 = u / projMatrix[0][0] * (-z1)
-                y1 = v / projMatrix[1][1] * (-z1)
-
-                observation[:, :, 0] = T[0][0] * x1 + T[0][1] * y1 + T[0][2] * z1 + T[0][3]
-                observation[:, :, 1] = T[1][0] * x1 + T[1][1] * y1 + T[1][2] * z1 + T[1][3]
-                observation[:, :, 2] = T[2][0] * x1 + T[2][1] * y1 + T[2][2] * z1 + T[2][3]
-                observation[:, :, 3] = rgb[:, :, 0] / 255
-                observation[:, :, 4] = rgb[:, :, 1] / 255
-                observation[:, :, 5] = rgb[:, :, 2] / 255
-
-                T2 = np.linalg.inv(viewMat2)
-                depth_buffer2 = img_arr2[3].reshape(self._height, self._width)
-                d2 = 2 * depth_buffer2 - 1
-
-                z2 = -projMatrix[2][3] / (projMatrix[2][2] + d2)
-                x2 = u / projMatrix[0][0] * (-z2)
-                y2 = v / projMatrix[1][1] * (-z2)
-
-                observation2[:, :, 0] = T2[0][0] * x2 + T2[0][1] * y2 + T2[0][2] * z2 + T2[0][3]
-                observation2[:, :, 1] = T2[1][0] * x2 + T2[1][1] * y2 + T2[1][2] * z2 + T2[1][3]
-                observation2[:, :, 2] = T2[2][0] * x2 + T2[2][1] * y2 + T2[2][2] * z2 + T2[2][3]
-                observation2[:, :, 3] = rgb2[:, :, 0] / 255
-                observation2[:, :, 4] = rgb2[:, :, 1] / 255
-                observation2[:, :, 5] = rgb2[:, :, 2] / 255
-
-
-                npoints = 2048
-                sample_observation = np.r_[observation[observation[:, :, 2] > 0.0034], observation2[observation2[:, :, 2] > 0.0034]]
-                sample_observation = sample_observation[sample_observation[:, 2] < 0.3]
-                a, b = sample_observation.shape
-               
-                self._observation = np.zeros((npoints, 6), dtype=np.float32)
-                if a > npoints:
-                    choice = np.random.choice(a, npoints, replace=True, p=None)
-                    self._observation[:, 0:3] = pc_normalize(sample_observation[choice, 0:3])
-                    self._observation[:, 3:] = sample_observation[choice, 3:]
-                if a < npoints:
-                    choice = np.random.choice(a, npoints - a, replace=True, p=None)
-                    self._observation[:, 0:3] = pc_normalize(
-                        np.r_[sample_observation[:, 0:3], sample_observation[choice, 0:3]])
-                    self._observation[:, 3:] = np.r_[sample_observation[:, 3:], sample_observation[choice, 3:]]
-                if a == npoints:
-                    self._observation[:, 0:3] = pc_normalize(sample_observation[:, 0:3])
-                    self._observation[:, 3:] = sample_observation[:, 3:]
-
-
-                self._observation = self._observation.T
              
 
         else:
             if self._mode == 'rgbd':
                 self._observation = np.zeros((4, self._height, self._width), dtype=np.uint8)
-            elif self._mode == 'de' or self._mode == 'pc':
+            elif self._mode == 'de':
                 self._observation = np.zeros((6, self._height, self._width), dtype=np.uint8)
         additional_info = self._kuka.getObservation()     #末端执行器位置方向，爪子力，角度   4
         blockPos, blockQuat = p.getBasePositionAndOrientation(self._block)
@@ -578,85 +505,10 @@ class KukaCamGymEnv2(gym.Env):
                 self._observation[4] = rgb2[:, :, 1]
                 self._observation[5] = rgb2[:, :, 2]
 
-            elif self._mode == 'pc':
-            
-                observation = np.zeros((self._height, self._width, 6), dtype=np.float32)
-                viewMat2 = p.computeViewMatrixFromYawPitchRoll(camEyePos, distance, 0, pitch, roll, upAxisIndex)
-
-                img_arr2 = p.getCameraImage(self._width,
-                                            self._height,
-                                            viewMat2,
-                                            projMatrix)
-                rgb2 = img_arr2[2]
-                observation2 = np.zeros((self._height, self._width, 6), dtype=np.float32)
-                viewMat2 = np.array(viewMat2).reshape(4, 4).T
-
-                px = np.tile(np.arange(self._width, dtype=np.float32)[None, :], (self._height, 1))
-                py = np.tile(np.arange(self._height, dtype=np.float32)[:, None], (1, self._width))
-                viewMat = np.array(viewMat).reshape(4, 4).T
-
-                projMatrix = np.array(projMatrix).reshape(4, 4).T
-                T = np.linalg.inv(viewMat)
-                u = (px / (self._width - 1) - 0.5) * 2
-                v = (-py / (self._height - 1) + 0.5) * 2
-                depth_buffer = img_arr[3].reshape(self._height, self._width)
-
-                d = 2 * depth_buffer - 1
-                z1 = -projMatrix[2][3] / (projMatrix[2][2] + d)
-                x1 = u / projMatrix[0][0] * (-z1)
-                y1 = v / projMatrix[1][1] * (-z1)
-
-                observation[:, :, 0] = T[0][0] * x1 + T[0][1] * y1 + T[0][2] * z1 + T[0][3]
-                observation[:, :, 1] = T[1][0] * x1 + T[1][1] * y1 + T[1][2] * z1 + T[1][3]
-                observation[:, :, 2] = T[2][0] * x1 + T[2][1] * y1 + T[2][2] * z1 + T[2][3]
-                observation[:, :, 3] = rgb[:, :, 0] / 255
-                observation[:, :, 4] = rgb[:, :, 1] / 255
-                observation[:, :, 5] = rgb[:, :, 2] / 255
-
-                T2 = np.linalg.inv(viewMat2)
-                depth_buffer2 = img_arr2[3].reshape(self._height, self._width)
-                d2 = 2 * depth_buffer2 - 1
-
-                z2 = -projMatrix[2][3] / (projMatrix[2][2] + d2)
-                x2 = u / projMatrix[0][0] * (-z2)
-                y2 = v / projMatrix[1][1] * (-z2)
-
-                observation2[:, :, 0] = T2[0][0] * x2 + T2[0][1] * y2 + T2[0][2] * z2 + T2[0][3]
-                observation2[:, :, 1] = T2[1][0] * x2 + T2[1][1] * y2 + T2[1][2] * z2 + T2[1][3]
-                observation2[:, :, 2] = T2[2][0] * x2 + T2[2][1] * y2 + T2[2][2] * z2 + T2[2][3]
-                observation2[:, :, 3] = rgb2[:, :, 0] / 255
-                observation2[:, :, 4] = rgb2[:, :, 1] / 255
-                observation2[:, :, 5] = rgb2[:, :, 2] / 255
-
-
-                npoints = 1024
-                sample_observation = np.r_[observation[observation[:, :, 2] > 0.0034], observation2[observation2[:, :, 2] > 0.0034]]
-                sample_observation = sample_observation[sample_observation[:, 2] < 0.3]
-                a, b = sample_observation.shape
-               
-                self._observation = np.zeros((npoints, 6), dtype=np.float32)
-                if a > npoints:
-                    choice = np.random.choice(a, npoints, replace=True, p=None)
-                    self._observation[:, 0:3] = pc_normalize(sample_observation[choice, 0:3])
-                    self._observation[:, 3:] = sample_observation[choice, 3:]
-                if a < npoints:
-                    choice = np.random.choice(a, npoints - a, replace=False, p=None)
-                    self._observation[:, 0:3] = pc_normalize(
-                        np.r_[sample_observation[:, 0:3], sample_observation[choice, 0:3]])
-                    self._observation[:, 3:] = np.r_[sample_observation[:, 3:], sample_observation[choice, 3:]]
-                if a == npoints:
-                    self._observation[:, 0:3] = pc_normalize(sample_observation[:, 0:3])
-                    self._observation[:, 3:] = sample_observation[:, 3:]
-
-
-                self._observation = self._observation.T
-                
-
-
         else:
             if self._mode == 'rgbd':
                 self._observation = np.zeros((4, self._height, self._width), dtype=np.uint8)
-            elif self._mode == 'de' or self._mode== 'pc':
+            elif self._mode == 'de' :
                 self._observation = np.zeros((6, self._height, self._width), dtype=np.uint8)
         additional_info = self._kuka.getObservation()
         blockPos, blockQuat = p.getBasePositionAndOrientation(self._block)
@@ -825,81 +677,11 @@ class KukaCamGymEnv3(gym.Env):
                 self._observation[4] = rgb2[:, :, 1]
                 self._observation[5] = rgb2[:, :, 2]
 
-            elif self._mode == 'pc':
-                observation = np.zeros((self._height, self._width, 6), dtype=np.float32)
-                viewMat2 = p.computeViewMatrixFromYawPitchRoll(camEyePos, distance, 0, pitch, roll, upAxisIndex)
 
-                img_arr2 = p.getCameraImage(self._width,
-                                            self._height,
-                                            viewMat2,
-                                            projMatrix)
-                rgb2 = img_arr2[2]
-                observation2 = np.zeros((self._height, self._width, 6), dtype=np.float32)
-                viewMat2 = np.array(viewMat2).reshape(4, 4).T
-
-                px = np.tile(np.arange(self._width, dtype=np.float32)[None, :], (self._height, 1))
-                py = np.tile(np.arange(self._height, dtype=np.float32)[:, None], (1, self._width))
-                viewMat = np.array(viewMat).reshape(4, 4).T
-
-                projMatrix = np.array(projMatrix).reshape(4, 4).T
-                T = np.linalg.inv(viewMat)
-                u = (px / (self._width - 1) - 0.5) * 2
-                v = (-py / (self._height - 1) + 0.5) * 2
-                depth_buffer = img_arr[3].reshape(self._height, self._width)
-
-                d = 2 * depth_buffer - 1
-                z1 = -projMatrix[2][3] / (projMatrix[2][2] + d)
-                x1 = u / projMatrix[0][0] * (-z1)
-                y1 = v / projMatrix[1][1] * (-z1)
-
-                observation[:, :, 0] = T[0][0] * x1 + T[0][1] * y1 + T[0][2] * z1 + T[0][3]
-                observation[:, :, 1] = T[1][0] * x1 + T[1][1] * y1 + T[1][2] * z1 + T[1][3]
-                observation[:, :, 2] = T[2][0] * x1 + T[2][1] * y1 + T[2][2] * z1 + T[2][3]
-                observation[:, :, 3] = rgb[:, :, 0] / 255
-                observation[:, :, 4] = rgb[:, :, 1] / 255
-                observation[:, :, 5] = rgb[:, :, 2] / 255
-
-                T2 = np.linalg.inv(viewMat2)
-                depth_buffer2 = img_arr2[3].reshape(self._height, self._width)
-                d2 = 2 * depth_buffer2 - 1
-
-                z2 = -projMatrix[2][3] / (projMatrix[2][2] + d2)
-                x2 = u / projMatrix[0][0] * (-z2)
-                y2 = v / projMatrix[1][1] * (-z2)
-
-                observation2[:, :, 0] = T2[0][0] * x2 + T2[0][1] * y2 + T2[0][2] * z2 + T2[0][3]
-                observation2[:, :, 1] = T2[1][0] * x2 + T2[1][1] * y2 + T2[1][2] * z2 + T2[1][3]
-                observation2[:, :, 2] = T2[2][0] * x2 + T2[2][1] * y2 + T2[2][2] * z2 + T2[2][3]
-                observation2[:, :, 3] = rgb2[:, :, 0] / 255
-                observation2[:, :, 4] = rgb2[:, :, 1] / 255
-                observation2[:, :, 5] = rgb2[:, :, 2] / 255
-
-
-                npoints = 1024
-                sample_observation = np.r_[observation[observation[:, :, 2] > 0.0034], observation2[observation2[:, :, 2] > 0.0034]]
-                sample_observation = sample_observation[sample_observation[:, 2] < 0.3]
-                a, b = sample_observation.shape
-               
-                self._observation = np.zeros((npoints, 6), dtype=np.float32)
-                if a > npoints:
-                    choice = np.random.choice(a, npoints, replace=True, p=None)
-                    self._observation[:, 0:3] = pc_normalize(sample_observation[choice, 0:3])
-                    self._observation[:, 3:] = sample_observation[choice, 3:]
-                if a < npoints:
-                    choice = np.random.choice(a, npoints - a, replace=False, p=None)
-                    self._observation[:, 0:3] = pc_normalize(
-                        np.r_[sample_observation[:, 0:3], sample_observation[choice, 0:3]])
-                    self._observation[:, 3:] = np.r_[sample_observation[:, 3:], sample_observation[choice, 3:]]
-                if a == npoints:
-                    self._observation[:, 0:3] = pc_normalize(sample_observation[:, 0:3])
-                    self._observation[:, 3:] = sample_observation[:, 3:]
-
-
-                self._observation = self._observation.T
         else:
             if self._mode == 'rgbd':
                 self._observation = np.zeros((4, self._height, self._width), dtype=np.uint8)
-            elif self._mode == 'de'or self._mode=='pc':
+            elif self._mode == 'de':
                 self._observation = np.zeros((6, self._height, self._width), dtype=np.uint8)
         additional_info = self._kuka.getObservation()
         cupsPos, cupsQuat = p.getBasePositionAndOrientation(self._cups)
