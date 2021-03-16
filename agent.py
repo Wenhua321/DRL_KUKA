@@ -143,20 +143,9 @@ def soft_update(target, source, tau):
         target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
 
 
-class SpacialSoftmaxExpectation(nn.Module):
-    def __init__(self, size, device):
-        super(SpacialSoftmaxExpectation, self).__init__()  
-        cor = opt_cuda(torch.arange(size).type(torch.FloatTensor), device)
-        X, Y = torch.meshgrid(cor, cor)
-        X = X.reshape(-1, 1)
-        Y = Y.reshape(-1, 1)
-        self.fixed_weight = torch.cat((Y, X), dim=1)
-        self.fixed_weight /= size - 1
-
-    def forward(self, x):
-        return nn.Softmax(2)(x.view(*x.size()[:2], -1)).matmul(self.fixed_weight).view(x.size(0), -1)
 
 
+'''
 class Actor(nn.Module):
     def __init__(self, mode, width, device):
         super(Actor, self).__init__()
@@ -198,21 +187,63 @@ class Actor(nn.Module):
         return action
 
 
+'''
+class SpacialSoftmaxExpectation(nn.Module):
+    def __init__(self, size, device):
+        super(SpacialSoftmaxExpectation, self).__init__()
+        cor = opt_cuda(torch.arange(size).type(torch.FloatTensor), device)
+        X, Y = torch.meshgrid(cor, cor)
+        X = X.reshape(-1, 1)
+        Y = Y.reshape(-1, 1)
+        self.fixed_weight = torch.cat((Y, X), dim=1)
+        self.fixed_weight /= size - 1
 
-class FastActor(nn.Module):
-    def __init__(self):
-        super(FastActor, self).__init__()
+    def forward(self, x):
+        return nn.Softmax(2)(x.view(*x.size()[:2], -1)).matmul(self.fixed_weight).view(x.size(0), -1)
+
+
+class Actor(nn.Module):
+    def __init__(self, mode, width, device):
+        super(Actor, self).__init__()
+        self.mode = mode
+        self.width = width
+        self.device = device
+        self.in_channel = 4 if self.mode == 'rgbd' else 3
+        self.out_channel = 16 if self.mode == 'rgbd' else 8
+        self.conv = nn.Sequential(
+            nn.Conv2d(self.in_channel, self.out_channel, 3, 1),
+            nn.ReLU(),
+            nn.Conv2d(self.out_channel, self.out_channel, 3, 1),
+            nn.ReLU(),
+            nn.Conv2d(self.out_channel, self.out_channel, 3, 1),
+            nn.ReLU())
+
+        # 4*128*128->16*122*122
         self.fc1 = nn.Sequential(
-            nn.Linear(20, 256),
+            nn.Linear((32 + 8)*5, 256),
             nn.ReLU(),
             nn.Linear(256, 256),
             nn.ReLU(),
             nn.Linear(256, 5),
             nn.Tanh())
 
-    def forward(self, info):
-        a = self.fc1(info)
-        return a
+
+
+
+    def forward(self, x, robot_state):
+        output = torch.tensor(40 * 5, torch.float, x.device())
+        for i in range(5):
+            if self.mode == 'rgbd':
+                x2 = self.conv(x[i] / 255)  # 122*122*8
+            elif self.mode == 'de':
+                l1 = self.conv(x[i,:, :3] / 255)
+                l2 = self.conv(x[i,:, 3:] / 255)
+                x2 = torch.cat((l1, l2), dim=1)
+            x3 = SpacialSoftmaxExpectation(self.width - 6, self.device)(x2)
+            # concatenate with robot state:
+            output[i * 40:(i + 1) * 128] = torch.cat((x3, robot_state[i]), dim=1)
+        action = self.fc1(output)  # 32 + 8
+        return action
 
 
 class Critic(nn.Module):
@@ -230,7 +261,37 @@ class Critic(nn.Module):
         q = self.fc1(torch.cat((info, action), dim=1))
         return q
 
+class FastActor(nn.Module):
+    def __init__(self):
+        super(FastActor, self).__init__()
+        self.fc1 = nn.Sequential(
+            nn.Linear(20, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 5),
+            nn.Tanh())
+
+    def forward(self, info):
+        a = self.fc1(info)
+        return a
+
 '''
+class Critic(nn.Module):
+    def __init__(self):
+        super(Critic, self).__init__()
+        self.fc1 = nn.Sequential(
+            nn.Linear(20 + 5, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid())
+
+    def forward(self, info, action):
+        q = self.fc1(torch.cat((info, action), dim=1))
+        return q
+   
 class ReplayBuffer:
     def __init__(self,mode, w, h, action_dim, info_dim, size):
 
@@ -272,8 +333,8 @@ class ReplayBuffer:
     def __init__(self,length,mode, w, h, action_dim, info_dim, size):
 
         c = 6 if mode == 'de' else 4
-        self.sta1_buf = np.zeros([size, length,c, h, w], dtype=np.uint8)
-        self.sta2_buf = np.zeros([size, length,c, h, w], dtype=np.uint8)
+        self.sta1_buf = np.zeros([size, length, c, h, w], dtype=np.uint8)
+        self.sta2_buf = np.zeros([size, length, c, h, w], dtype=np.uint8)
         self.acts_buf = np.zeros([size, action_dim], dtype=np.float32)
         self.rews_buf = np.zeros([size, 1], dtype=np.float32)
         self.done_buf = np.zeros([size, 1], dtype=np.bool_)
@@ -306,10 +367,10 @@ class ReplayBuffer:
 
 
 class Observation():
-    def __init__(self,size,c,h,w,info_dim):
-        self.sta = np.zeros([size, c, h, w], dtype=np.uint8)
-        self.info = np.zeros([size, info_dim], dtype=np.float32)
-        self.ptr,  self.max_size = 0, size
+    def __init__(self,length,c,h,w,info_dim):
+        self.sta = np.zeros([length, c, h, w], dtype=np.uint8)
+        self.info = np.zeros([length, info_dim], dtype=np.float32)
+        self.ptr,  self.max_size = 0, length
     def store(self,observation,info):
         if self.ptr == 0:
             for i in range(self.max_size):
@@ -411,14 +472,14 @@ class HLAgent:
         self.train_step = 50
 
     def act(self, s, info, test=False):
-        action_b = self.base(info)
+        action_b = self.base(info[4])
         info = np_to_tensor(info, self.device).unsqueeze(dim=0)
         if self.use_fast:
             with torch.no_grad():
                 action = self.actor(info)
         else:
             s = np_to_tensor(s, self.device).unsqueeze(dim=0)
-            info_t = info[:, :8]
+            info_t = info[:,:, :8]
             with torch.no_grad():
                 action = self.actor(s, info_t)
         if test or self.imitate:
@@ -430,8 +491,8 @@ class HLAgent:
             self.epsilon = max(self.epsilon - self.delta, 0)
             action_b_t = np_to_tensor(action_b, self.device).unsqueeze(dim=0)
             with torch.no_grad():
-                q_b = self.critic(info, action_b_t)
-                q = self.critic(info, action)
+                q_b = self.critic(info[4], action_b_t)
+                q = self.critic(info[4], action)
             if q_b.item() > q.item() and self.mixed_q:
                 return action_b, False
             else:
@@ -452,16 +513,16 @@ class HLAgent:
             if not self.use_fast:
                 si = np_to_tensor(batch['sta1'], self.device).contiguous()
                 sn = np_to_tensor(batch['sta2'], self.device).contiguous()
-                infoi_t = np_to_tensor(batch['info1'][:, :8], self.device)
-                infon_t = np_to_tensor(batch['info2'][:, :8], self.device)
+                infoi_t = np_to_tensor(batch['info1'][:,:, :8], self.device)
+                infon_t = np_to_tensor(batch['info2'][:,:, :8], self.device)
             ai = np_to_tensor(batch['acts'], self.device)
             ri = np_to_tensor(batch['rews'], self.device)
             d = np_to_tensor(batch['done'], self.device)
             infoi = np_to_tensor(batch['info1'], self.device)
 
             infon = np_to_tensor(batch['info2'], self.device)
-            baseline_action = np_to_tensor(baseline_controller(batch['info1'], self.base), self.device)
-            baseline_action_n = np_to_tensor(baseline_controller(batch['info2'], self.base), self.device)
+            baseline_action = np_to_tensor(baseline_controller(batch['info1'][:,4,:], self.base), self.device)
+            baseline_action_n = np_to_tensor(baseline_controller(batch['info2'][:,4,:], self.base), self.device)
 
             if self.imitate:
                 self.optimizer_actor.zero_grad()
@@ -483,12 +544,12 @@ class HLAgent:
                         back_up = self.target_critic(infon, self.target_actor(infon))
                     else:
 
-                        back_up = self.target_critic(infon, self.target_actor(sn, infon_t))
+                        back_up = self.target_critic(infon[:,4], self.target_actor(sn, infon_t))
                     if self.baseline_boot:
-                        back_up_d = self.target_critic(infon, baseline_action_n)
+                        back_up_d = self.target_critic(infon[:,4], baseline_action_n)
                         back_up = torch.max(back_up, back_up_d)
                     yi = ri + (1 - d) * self.gamma * back_up
-                Lc = ((yi - self.critic(infoi, ai)) ** 2).mean()
+                Lc = ((yi - self.critic(infoi[:,4], ai)) ** 2).mean()
                 Lc.backward()
                 self.optimizer_critic.step()
 
@@ -497,10 +558,10 @@ class HLAgent:
                     a = self.actor(infoi)
                 else:
                     a = self.actor(si, infoi_t)
-                q_a = self.critic(infoi, a)
+                q_a = self.critic(infoi[:,4], a)
                 if self.behavior_clone:
                     with torch.no_grad():
-                        q_a_d = self.critic(infoi, baseline_action)
+                        q_a_d = self.critic(infoi[:,4], baseline_action)
                         xi = nn.ReLU()(torch.sign(q_a_d - q_a)).contiguous()
                     La = (((a - baseline_action) ** 2).mean() * xi - 0.02 * q_a).mean().contiguous()
                 else:

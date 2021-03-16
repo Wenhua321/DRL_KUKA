@@ -1,14 +1,14 @@
 import numpy as np
 import torch
 from kuka import KukaCamGymEnv, KukaCamGymEnv2, KukaCamGymEnv3
-from agent import HLAgent
+from agent import HLAgent,Observation
 import csv
 import argparse
 
 torch.backends.cudnn.enabled = False
 
 
-def train(env, agent, log_dir, imitate=False):
+def train(observation1,observation2,env, agent, log_dir, imitate=False):
 
     print('******************************************\n'
           'Start Training: \n'
@@ -27,6 +27,8 @@ def train(env, agent, log_dir, imitate=False):
     for n in range(n_episodes):
         agent.actor.train()       
         s, info = env.reset()
+        observation1.store(s,info)
+        observation2.store(s,info)
         frame = 0
         R = 0
         ratio = 0
@@ -35,20 +37,23 @@ def train(env, agent, log_dir, imitate=False):
         elif frames > 4e5:
             break
         while True:
-            action, flag = agent.act(s, info)
+            action, flag = agent.act(observation1.sta, observation1.info)
             if flag:
                 ratio += 1
             if not imitate:
                 action += 0.1 * np.random.normal(0, 1, 5)
             action = np.clip(action, -env.action_space.high, env.action_space.high)
             s_next, r, done, info_next = env.step(action)
-            agent.remember(s, info, action, s_next, r, done, info_next)
+            observation2.store(s_next,info_next)
+            agent.remember(observation1.sta, observation1.info, action, observation2.sat, r, done, observation2.info)
 
-            s = s_next
-            info = info_next
+            observation1.store(s_next,info_next)
+
             R += r
             frame += 1
             if done or frame >= 100:
+                observation1.clean()
+                observation2.clean()
                 print('episode', n + 1, 'ends in', frame, 'frames, return', R, 'ratio', ratio / frame)
                 frames += frame
                 if not agent.use_fast:
@@ -66,16 +71,17 @@ def train(env, agent, log_dir, imitate=False):
                         test_episodes = 100
                     for _ in range(test_episodes):
                         s, info = env.reset()
+                        observation1.store(s,info)
                         frame_t = 0
                         R_t = 0
                         while True:
-                            a, _ = agent.act(s, info, test=True)
+                            a, _ = agent.act(observation1.sta, observation1.info, test=True)
                             s_next, r, done, info_next = env.step(a)
-                            s = s_next
-                            info = info_next
+                            observation1.store(s_next,info_next)
                             frame_t += 1
                             R_t += r
                             if done or frame_t >= 100:
+                                observation1.clean()
                                 if R_t == 1:
                                     success_count += 1
                                 break
@@ -122,11 +128,12 @@ if __name__ == '__main__':
                     behavior_clone=args.behavior_clone, imitate=args.imitate)
     
                   '''
-
+    observation1 = Observation(length=5,c=6 if args.mode == 'de' else 4,h=args.width,w=args.width,info_dim=20)
+    observation2 = Observation(length=5, c=6 if args.mode == 'de' else 4, h=args.width, w=args.width, info_dim=20)
     agent = HLAgent(mode=args.mode, width=args.width, device=args.gpu, use_fast=False, task=args.task,
                     mixed_q=args.mixed_q, baseline_boot=args.baseline_boot,
                     behavior_clone=args.behavior_clone, imitate=args.imitate)
-    train(env, agent, log_dir=log_dir, imitate=args.imitate)
+    train(observation1,observation2,env, agent, log_dir=log_dir, imitate=args.imitate)
     '''
     agent = HLAgent(mode='de', width=128, device=0, use_fast=False, task=3,
                     mixed_q=True, baseline_boot=True,
