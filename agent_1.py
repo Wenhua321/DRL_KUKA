@@ -323,7 +323,7 @@ class ReplayBufferFast:
 
 
 class HLAgent:
-    def __init__(self, mode='de', width=128, device=0, use_fast=False, task=1,
+    def __init__(self, mode='de', width=128, device=0, use_fast=False, task=1,delta=0.00005,lamda=0.02,
                  mixed_q=True, baseline_boot=True, behavior_clone=True, imitate=False):
         self.mode = mode
         self.width = width
@@ -333,6 +333,14 @@ class HLAgent:
         self.baseline_boot = baseline_boot
         self.behavior_clone = behavior_clone
         self.imitate = imitate
+        self.gamma = 0.99
+        self.tau = 0.005
+        self.epsilon = 1
+        self.delta = delta
+        self.batch_size = 256
+        self.train_step = 50
+        self.lamda = lamda
+        
         if imitate:
             with open('best/'+str(task)+'/actor.pt', 'rb') as fa:
                 self.best = opt_cuda(torch.load(fa), self.device)
@@ -352,6 +360,8 @@ class HLAgent:
               '     mode:', self.mode, ';\n'
               '     image_width:', self.width, ';\n'
               '     device:', self.device, ';\n'
+              '     delta:', self.delta, ';\n'
+              '     lamda:', self.lamda, ';\n'
               '     imitate?:', self.imitate, ';\n'
               '     use fast actor?:', self.use_fast, ';\n'
               '     use mixed Q control?:', self.mixed_q, ';\n'
@@ -370,12 +380,7 @@ class HLAgent:
         soft_update(self.target_critic, self.critic, 1)
         self.optimizer_actor = torch.optim.Adam(self.actor.parameters(), lr=1e-3)
         self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=1e-3)
-        self.gamma = 0.99
-        self.tau = 0.005
-        self.epsilon = 1
-        self.delta = 2e-5
-        self.batch_size = 256
-        self.train_step = 50
+        
 
     def act(self, s, info, test=False):
         action_b = self.base(info)
@@ -469,7 +474,7 @@ class HLAgent:
                     with torch.no_grad():
                         q_a_d = self.critic(infoi, baseline_action)
                         xi = nn.ReLU()(torch.sign(q_a_d - q_a)).contiguous()
-                    La = (((a - baseline_action) ** 2).mean() * xi - 0.02 * q_a).mean().contiguous()
+                    La = (((a - baseline_action) ** 2).mean() * xi - self.lamda * q_a).mean().contiguous()
                 else:
                     La = - 0.02 * q_a.mean()
                 La.backward()

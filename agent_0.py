@@ -127,6 +127,7 @@ class ReplayBuffer:
                     info1=self.info1_buf[idxs],
                     info2=self.info2_buf[idxs])
 
+
 class ObservationWithMemory():
     def __init__(self,size,c,h,w,info_dim):
         self.sta_buf = np.zeros([size, c, h, w], dtype=np.uint8)

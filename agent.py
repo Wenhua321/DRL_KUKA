@@ -232,6 +232,7 @@ class Actor(nn.Module):
 
     def forward(self, x, robot_state):
         batch_size=x.shape[0]
+
         output = np_to_tensor( np.zeros([batch_size,40*5], dtype=np.float32),self.device)
         for i in range(5):
             if self.mode == 'rgbd':
@@ -243,6 +244,7 @@ class Actor(nn.Module):
             x3 = SpacialSoftmaxExpectation(self.width - 6, self.device)(x2)
             # concatenate with robot state:
             output[:,i*40:(i+1)*40]=torch.cat((x3, robot_state[:,i]), dim=1)
+        output[:,0:40] = output[:,160:200]-output[:,0:40]
         action = self.fc1(output)  # 32 + 8
         return action
 

@@ -1,6 +1,10 @@
 import torch
+import numpy as np
+import pybullet
+import gym
+import csv
+import time
+import argparse
 
-a=torch.tensor([[1,1]])
-c=a.shape[0]
-print (c)
-print(a.shape[0])
+
+print("hello world!")

@@ -5,7 +5,7 @@ from agent_1 import HLAgent
 import csv
 import argparse
 
-torch.backends.cudnn.enabled = False
+
 
 
 def train(env, agent, log_dir, imitate=False):
@@ -87,6 +87,7 @@ def train(env, agent, log_dir, imitate=False):
                     writer.writerow(new_line)
                 with open(log_dir + '/critic.pt', 'wb') as fc:
                     torch.save(agent.critic, fc)
+
                 with open(log_dir + '/actor.pt', 'wb') as fa:
                     torch.save(agent.actor, fa)
                 break
@@ -101,10 +102,13 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--log', type=int, default=1)
     parser.add_argument('-i', '--use_image', action='store_true')
     parser.add_argument('-a', '--imitate', action='store_true')
+    parser.add_argument('-e', '--delta',type =float,default=0.00005)
+    parser.add_argument('-s', '--lamda',type =float,default=0.02)
     parser.add_argument('-t', '--task', type=int, default=3)
     parser.add_argument('-q', '--mixed_q', action='store_true')
     parser.add_argument('-b', '--baseline_boot', action='store_true')
     parser.add_argument('-c', '--behavior_clone', action='store_true')
+    
     args = parser.parse_args()
     exp = ['DDPG', 'wMQ', 'wBB', 'nBC', 'wBC', 'nBB', 'nMQ', '']
     id = args.mixed_q + args.baseline_boot * 2 + args.behavior_clone * 4
@@ -114,18 +118,25 @@ if __name__ == '__main__':
         env = KukaCamGymEnv2(renders=False, image_output=args.use_image, mode=args.mode, width=args.width)
     elif args.task == 3:
         env = KukaCamGymEnv3(renders=False, image_output=args.use_image, mode=args.mode, width=args.width)
-    log_dir = 'saves/t' + str(args.task) + exp[id] + '/' + str(args.log)
-
+    log_dir = 'save1/t' + str(args.task) + exp[id] + '/' + str(args.log)
+    
     '''
     agent = HLAgent(mode=args.mode, width=args.width, device=args.gpu, use_fast=not args.use_image, task=args.task,
                     mixed_q=args.mixed_q, baseline_boot=args.baseline_boot,
                     behavior_clone=args.behavior_clone, imitate=args.imitate)
-    
                   '''
 
-    agent = HLAgent(mode=args.mode, width=args.width, device=args.gpu, use_fast=False, task=args.task,
+    agent = HLAgent(mode=args.mode, width=args.width, device=args.gpu, use_fast=False, task=args.task,delta=args.delta,lamda=args.lamda,
                     mixed_q=args.mixed_q, baseline_boot=args.baseline_boot,
                     behavior_clone=args.behavior_clone, imitate=args.imitate)
     train(env, agent, log_dir=log_dir, imitate=args.imitate)
+    
+    '''
+    agent = HLAgent(mode='de', width=128, device=0, use_fast=False, task=3,
+                    mixed_q=True, baseline_boot=True,
+                    behavior_clone=True, imitate=False)
 
+    train(env, agent, log_dir=log_dir, imitate=False)
+    '''
+    
     env.close()
